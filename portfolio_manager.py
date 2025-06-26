@@ -1,4 +1,5 @@
-from .dnse_utils import arbiter, setup_logger
+from .infra import arbiter
+from .dnse_utils import setup_logger
 
 """
 PortfolioManager allocates position sizes for multi-strategy systems

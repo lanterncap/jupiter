@@ -166,9 +166,11 @@ class ConditionFlag:
         return self._value
     
 class CompositeScore:
-    def __init__(self, strategy, prefix="score"):
+    """Register and log scores for a composite condition"""
+
+    def __init__(self, strategy, *, prefix="score"):
         self.strategy = strategy
-        self.prefix = prefix or "score"
+        self.prefix = prefix
         self.score = 0
         self.max_score = 0
     
@@ -177,13 +179,18 @@ class CompositeScore:
         self.strategy.log(f"{self.prefix}_{name}", score)
         self.score += score
         self.max_score += max_score
+        
+    def get_score(self):
         self.strategy.log(f"{self.prefix}", self.score)
         self.strategy.log(f"max_{self.prefix}", self.max_score)
+        return self.score
     
-    def get_ratio(self):
-        ratio = self.score / max(self.max_score, 1e-6)
-        self.strategy.log(f'{self.prefix}_ratio', ratio)
-        return ratio
+    def get_score_ratio(self):
+        score_ratio = self.score / max(self.max_score, 1e-6)
+        self.strategy.log(f"{self.prefix}", self.score)
+        self.strategy.log(f"max_{self.prefix}", self.max_score)
+        self.strategy.log(f'{self.prefix}_ratio', score_ratio)
+        return score_ratio
     
 class BaseStrategy(bt.Strategy):
     """
@@ -195,6 +202,9 @@ class BaseStrategy(bt.Strategy):
     
     params = (
         ('regime', "default"),
+        
+        # minimum data length
+        ('min_data_len_n_days', 1),
 
         # time
         ('day', [0, 1, 2, 3, 4]),             # Days to trade (0=Mon ... 4=Fri)
@@ -231,6 +241,7 @@ class BaseStrategy(bt.Strategy):
         super().__init__()
         self.logger = setup_logger(name=self.__class__.__name__)
         self.bar_agg = BarAggregator(self.data)
+        self.min_data_len_condition = False # if there enough data to start trading
         self.logs = {}
         self.position_manager = PositionManager(self)
         self.position_manager.enable_sl_tp(sl_ratio=self.p.sl_ratio, tp_ratio=self.p.tp_ratio, trailing_stop=self.p.trailing_stop)
@@ -267,8 +278,16 @@ class BaseStrategy(bt.Strategy):
         self.exit_ma_slow = bt.indicators.ExponentialMovingAverage(self.data.close, period=self.p.exit_ma_slow)
 
         # exit execution
-        
+
     def entry_pre_condition(self):
+        # check minimum data length
+        if not self.min_data_len_condition:
+            d = self.bar_agg.get_prev_n_days_bar(max(self.p.min_data_len_n_days, 1))
+            if d.coverage < 1: # if not enough data...
+                return False # ...then wait for more
+            else:
+                self.min_data_len_condition = True
+        
         # reset daily trade count if new day
         if self.entry_datetime is None or self.data.datetime.date() > self.entry_datetime.date(): # new day
             self.daily_trade_count = 0
@@ -279,9 +298,6 @@ class BaseStrategy(bt.Strategy):
         
         return (self.data.datetime.date().weekday() in self.p.day and
                 self.p.entry_fromtime <= self.data.datetime.time() <= self.p.entry_totime)
-
-    def day_of_week(self):
-        return self.data.datetime.date(0).weekday()
 
     def entry_context_condition(self):
         return True
@@ -362,7 +378,7 @@ class BaseStrategy(bt.Strategy):
 
     ##############################################
     # Specialized functions for derived strategies to use
-    ##############################################    
+    ##############################################
     
     def entry_context_condition_d10_regime(self):
         if not self.entry_context_flag.is_valid():

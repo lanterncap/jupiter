@@ -395,7 +395,7 @@ def create_excel_pivot_native(datafile=None, outputfile=None, pivot_params=None)
         return
     
     # Export df to Excel outputfile
-    outputfile = os.path.abspath('excel_pivot.xlsx' if outputfile is None else outputfile)
+    outputfile = os.path.abspath(outputfile)
     if os.path.exists(outputfile):
         try:
             with open(outputfile, 'a+b') as f:
@@ -494,7 +494,184 @@ def create_excel_pivot_native(datafile=None, outputfile=None, pivot_params=None)
     except Exception as e:
         print(f"\nError: {str(e)}")
         return
+    
+def off_by_one_analysis(datafile=None, outputfile=None, score_prefix=None, trade_direction=None):
+    """
+    Analyze the off-by-one analysis of component scores.
 
+    Args:
+        datafile: The path to the data file.
+        outputfile: The path to the output file.
+        score_prefix: The prefix of the score column.
+    """
+    datafile = datafile or 'output/trade_exit_log.csv'
+    outputfile = outputfile or 'output/off_by_one_analysis.xlsx'
+    score_prefix = score_prefix or 'score'
+    score_prefix = score_prefix + '_'
+    if trade_direction is not None:
+        trade_direction = trade_direction.upper()
+        assert trade_direction in ['LONG', 'SHORT'], f"trade_direction must be 'LONG' or 'SHORT', got '{trade_direction}'"
+    
+    @contextmanager
+    def excel_session():
+        excel = win32.DispatchEx('Excel.Application')
+        excel.Visible = False
+        pid = win32process.GetWindowThreadProcessId(excel.Hwnd)[1]
+        try:
+            yield excel
+        finally:
+            excel.Quit()
+            if psutil.pid_exists(pid):
+                psutil.Process(pid).kill()
+
+    def write_result_table_to_excel(ws, result_table, title, offset_col=1, offset_row=2):
+        ws.Cells(offset_row-1, offset_col).Value = title
+        ws.Cells(offset_row, offset_col).Value = "score"
+        ws.Cells(offset_row, offset_col + 1).Value = "count_of_pnlcomm"
+        ws.Cells(offset_row, offset_col + 2).Value = "sum_of_pnlcomm"
+        ws.Cells(offset_row, offset_col + 3).Value = "average_of_pnlcomm"
+        ws.Cells(offset_row, offset_col + 4).Value = "average_of_pnlcomm_win"
+        for col in range(offset_col, offset_col + 5):
+            cell = ws.Cells(offset_row, col)
+            cell.Font.Bold = True
+            cell.Interior.Color = 0xE6D8AD  # Light blue fill color
+            # Add border for header row
+            cell.Borders.LineStyle = 1  # xlContinuous
+            cell.Borders.Weight = 2     # xlThin
+
+        for i in range(len(result_table)):
+            ws.Cells(i+offset_row+1, offset_col).Value = result_table.iloc[i]['score']
+            ws.Cells(i+offset_row+1, offset_col + 1).Value = result_table.iloc[i]['count_of_pnlcomm']
+            ws.Cells(i+offset_row+1, offset_col + 2).Value = result_table.iloc[i]['sum_of_pnlcomm']
+            ws.Cells(i+offset_row+1, offset_col + 2).NumberFormat = "#,##0;(#,##0)"
+            ws.Cells(i+offset_row+1, offset_col + 3).Value = result_table.iloc[i]['average_of_pnlcomm']
+            ws.Cells(i+offset_row+1, offset_col + 3).NumberFormat = "#,##0;(#,##0)"
+            ws.Cells(i+offset_row+1, offset_col + 4).Value = result_table.iloc[i]['average_of_pnlcomm_win']
+            ws.Cells(i+offset_row+1, offset_col + 4).NumberFormat = "0.0%"
+            # Add border for data rows
+            for col in range(offset_col, offset_col + 5):
+                cell = ws.Cells(i+offset_row+1, col)
+                cell.Borders.LineStyle = 1  # xlContinuous
+                cell.Borders.Weight = 2     # xlThin
+        
+        # Format the Total row at the bottom
+        total_row = offset_row + len(result_table)
+        for col in range(offset_col, offset_col + 5):
+            cell = ws.Cells(total_row, col)
+            cell.Font.Bold = True
+            cell.Interior.Color = 0xE6D8AD  # Light blue fill color for total row
+
+    df = pd.read_csv(datafile)
+    
+    if df.empty:
+        print("Data is empty. Off-by-one analysis not performed.")
+        return
+    
+    # Export df to Excel outputfile
+    outputfile = os.path.abspath(outputfile)
+    if os.path.exists(outputfile):
+        try:
+            with open(outputfile, 'a+b') as f:
+                pass
+        except Exception as e:
+            print(f"\nError accessing file: {str(e)}")
+            return
+    try:
+        data_sheet_name = "data"
+        df.to_excel(outputfile, sheet_name=data_sheet_name, index=False)
+    except Exception as e:
+        print(f"\nError writing to file: {str(e)}")
+        return
+    
+    try:
+        with excel_session() as excel:
+            wb = None
+            try:
+                wb = excel.Workbooks.Open(outputfile)
+                ws = wb.Worksheets.Add()
+                ws.Name = "result"
+
+                # find the score columns: all start with the score_prefix, except for score_prefix + "ratio"
+                score_cols = [col for col in df.columns if col.startswith(score_prefix) and col != score_prefix + "ratio"]
+                if not score_cols:
+                    print("No score columns found. Off-by-one analysis not performed.")
+                    return
+                
+                # Create reference table with score and pnlcomm statistics
+                # Calculate total score as sum of all score columns
+                df['score'] = df[score_cols].sum(axis=1)
+                
+                # Filter by trade_direction if specified
+                if trade_direction is not None:
+                    df_filtered = df[df['trade_direction'] == trade_direction]
+                else:
+                    df_filtered = df
+                
+                # Create reference table with specified columns
+                reference_table = df_filtered.groupby('score').agg({
+                    'pnlcomm': ['count', 'sum', 'mean'],
+                    'pnlcomm_win': 'mean'
+                }).round(2)
+                
+                # Flatten column names and write the table to excel sheet result_sheet_name
+                reference_table.columns = ['count_of_pnlcomm', 'sum_of_pnlcomm', 'average_of_pnlcomm', 'average_of_pnlcomm_win']
+                reference_table = reference_table.reset_index()
+                
+                # Add total row at the bottom
+                total_row = pd.DataFrame({
+                    'score': ['Total'],
+                    'count_of_pnlcomm': [reference_table['count_of_pnlcomm'].sum()],
+                    'sum_of_pnlcomm': [reference_table['sum_of_pnlcomm'].sum()],
+                    'average_of_pnlcomm': [reference_table['sum_of_pnlcomm'].sum() / reference_table['count_of_pnlcomm'].sum()],
+                    'average_of_pnlcomm_win': [reference_table['average_of_pnlcomm_win'].mean()]
+                })
+                reference_table = pd.concat([reference_table, total_row], ignore_index=True)
+                write_result_table_to_excel(ws, reference_table, "All scores")
+
+                # off-by-one analysis: for each column in score columns:
+                score_col_idx = 0
+                for score_col in score_cols:
+                    # Calculate new_score = score - score_col
+                    df_tmp = df_filtered.copy()
+                    df_tmp['score'] = df_tmp[score_cols].sum(axis=1) - df_tmp[score_col]
+                    # Create new table with new_score and statistics
+                    new_table = df_tmp.groupby('score').agg({
+                        'pnlcomm': ['count', 'sum', 'mean'],
+                        'pnlcomm_win': 'mean'
+                    }).round(2)
+                    
+                    # Flatten column names
+                    new_table.columns = ['count_of_pnlcomm', 'sum_of_pnlcomm', 'average_of_pnlcomm', 'average_of_pnlcomm_win']
+                    new_table = new_table.reset_index()
+                    
+                    # Add total row at the bottom
+                    total_row = pd.DataFrame({
+                        'score': ['Total'],
+                        'count_of_pnlcomm': [new_table['count_of_pnlcomm'].sum()],
+                        'sum_of_pnlcomm': [new_table['sum_of_pnlcomm'].sum()],
+                        'average_of_pnlcomm': [new_table['sum_of_pnlcomm'].sum() / new_table['count_of_pnlcomm'].sum()],
+                        'average_of_pnlcomm_win': [new_table['average_of_pnlcomm_win'].mean()]
+                    })
+                    new_table = pd.concat([new_table, total_row], ignore_index=True)
+                    # Write the table to excel sheet with column name as identifier
+                    score_col_idx += 1
+                    write_result_table_to_excel(ws, new_table, score_col, offset_col=score_col_idx*6+1)
+                    
+                wb.Save()
+                wb.Close()
+                print(f"Result tables successfully created and saved to: {outputfile}")
+            except Exception as e:
+                if wb:
+                    try:
+                        wb.Close(SaveChanges=False)
+                    except:
+                        pass
+                print(f"\nError: {str(e)}")
+                return
+    except Exception as e:
+        print(f"\nError: {str(e)}")
+        return
+        
 # test code
 if __name__ == "__main__":
     datafile = 'output/trade_exit_log.csv'
@@ -504,4 +681,5 @@ if __name__ == "__main__":
         'val': 'pnl',
         'func': ['COUNT', 'SUM', 'AVERAGE']
     }
-    create_excel_pivot_native(datafile=datafile, outputfile=outputfile, pivot_params=pivot_params)
+    #create_excel_pivot_native(datafile=datafile, outputfile=outputfile, pivot_params=pivot_params)
+    off_by_one_analysis(score_prefix="long_score", trade_direction="LONG")

@@ -6,7 +6,6 @@ from pathlib import Path
 from datetime import datetime, date
 import pytz
 import backtrader as bt
-import threading
 
 class SystemConfig:
     """Global configuration for Jupiter trading system"""
@@ -279,56 +278,6 @@ def get_vn30f1m_trading_symbol(trading_date=None):
         
     return symbol
 
-def get_vn30f1m_trading_symbol_old(trading_date=None): # old style. TODO: to remove this function
-    """
-    Returns the VN30F1M futures symbol that is actively trading for a given date.
-    VN30F1M futures contracts expire on the third Thursday of each month.
-
-    Args:
-        trading_date (date): The date for which to get the VN30F1M futures symbol.
-                             If None, uses the current date in Vietnam timezone.
-
-    Returns:
-        str: The VN30F1M futures contract symbol (e.g., "VN30F2411" for November 2024)
-
-    Example usage:
-        # Get symbol for current Vietnam date
-        symbol = get_vn30f1m_trading_symbol()
-
-        # Get symbol for specific date
-        from datetime import date
-        d = date(2024, 10, 22)
-        symbol = get_vn30f1m_trading_symbol(d)
-    """
-    trading_date = trading_date or current_date_in_vietnam()
-    
-    def third_thursday(year, month):
-        # Get first day of month
-        first_day = date(year, month, 1)
-        
-        # Calculate first Thursday (3 is Thursday in weekday())
-        first_thursday = 1 + (3 - first_day.weekday() + 7) % 7
-        
-        # Add 14 days to get to third Thursday
-        third_thursday_date = date(year, month, first_thursday + 14)
-        return third_thursday_date
-
-    year = trading_date.year
-    month = trading_date.month
-    third_thursday_current = third_thursday(year, month)
-
-    # If current date is past the third Thursday, move to the next month
-    if trading_date > third_thursday_current:
-        if month == 12:
-            year += 1
-            month = 1
-        else:
-            month += 1
-
-    symbol_year = year % 100  # Get last two digits of the year
-    symbol = f"VN30F{symbol_year:02d}{month:02d}"
-    return symbol
-
 class VN30F1MCommission(bt.CommInfoBase):
     """
     Commission scheme for VN30F1M futures. It has two parts: fixed, plus percentage
@@ -376,56 +325,3 @@ class VN30F1MSizer(bt.Sizer):
         margin_per_contract = value_per_contract * self.p.margin
         return cash // margin_per_contract
     
-class GoogleSheetLogger:
-    _instance = None
-    _instance_lock = threading.Lock()
-
-    def __new__(cls, *args, **kwargs):
-        if not cls._instance:
-            with cls._instance_lock:
-                if not cls._instance:
-                    cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __init__(self):
-        if hasattr(self, "_initialized"):
-            return
-        self._initialized = True
-        self._active = False
-
-    def activate(self): self._active = False
-    def deactivate(self): self._active = False
-    def shutdown(self): pass
-
-    def log_message(self, sheet_name, row_data): pass
-    def log_value(self, value): pass
-    def log_error(self, message): pass
-    def log_info(self, message): pass
-    def log_order(self, order, pm_gross=0, pm_net=0): pass
-
-gsheet_logger = GoogleSheetLogger()
-
-class Arbiter:
-    _instance = None
-    _instance_lock = threading.Lock()
-
-    def __new__(cls):
-        with cls._instance_lock:
-            if cls._instance is None:
-                cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __init__(self):
-        if hasattr(self, "_initialized") and self._initialized:
-            return
-        self._initialized = True
-        self._active = False
-
-    def activate(self): self._active = False
-    def deactivate(self): self._active = False
-    def shutdown(self): pass
-
-    def get_param(self, owner, param, param_type=str, default_value=None):
-        return default_value
-
-arbiter = Arbiter()

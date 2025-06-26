@@ -275,10 +275,10 @@ def optimize_strategy(strategy_class, data_feed, param_grid, initial_cash=100_00
     elif len(param_combinations) == 1:
         return None, param_combinations[0]
 
-    # Find best parameters based on lowest drawdown
+    # Find best parameters based on highest accumulated profit
     print("Running parameter optimization...")
     results = []
-    best_drawdown = None
+    best_return = None
     best_params = None
     for params in param_combinations:
         strategy, cerebro = run_single_backtest(strategy_class, data_feed, initial_cash, params)
@@ -295,8 +295,8 @@ def optimize_strategy(strategy_class, data_feed, param_grid, initial_cash=100_00
         results.append(result)
         print(f"Case {len(results)} of {len(param_combinations)}: {params}, accumulated profit: {result['accum_profit']:,.0f}")
 
-        if best_drawdown is None or result['max_drawdown'] < best_drawdown:
-            best_drawdown = result['max_drawdown']
+        if best_return is None or result['accum_profit'] > best_return:
+            best_return = result['accum_profit']
             best_params = params
 
     df = pd.DataFrame(results)

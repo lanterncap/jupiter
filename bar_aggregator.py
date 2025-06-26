@@ -15,7 +15,7 @@ class AggregatedBar:
     - from_datetime, to_datetime: datetime range of the aggregated bar
     """
     
-    def __init__(self, open_, high, low, close, volume, directional_volume, vwap, sma, from_datetime, to_datetime, info=None):
+    def __init__(self, open_, high, low, close, volume, directional_volume, vwap, from_datetime, to_datetime, info=None):
         self.open = open_
         self.high = high
         self.low = low
@@ -23,7 +23,6 @@ class AggregatedBar:
         self.volume = volume
         self.directional_volume = directional_volume
         self.vwap = vwap
-        self.sma = sma
         self.vwap_deviation = close - vwap
         self.from_datetime = from_datetime
         self.to_datetime = to_datetime
@@ -89,7 +88,6 @@ class AggregatedBar:
             f'{prefix}vwap': self.vwap,
             f'{prefix}vwap_deviation': self.vwap_deviation,
             f'{prefix}vwap_side': self.vwap_side,
-            f'{prefix}sma': self.sma,
             f'{prefix}from_datetime': self.from_datetime,
             f'{prefix}to_datetime': self.to_datetime,
             f'{prefix}coverage': self.coverage,
@@ -117,11 +115,11 @@ class BarAggregator:
     def __init__(self, data):
         self.data = data
 
-    def _aggregate_result(self, open, high, low, close, volume, directional_volume, vwap, sma, from_datetime, to_datetime, info=None):
-        return AggregatedBar(open, high, low, close, volume, directional_volume, vwap, sma, from_datetime, to_datetime, info)
+    def _aggregate_result(self, open, high, low, close, volume, directional_volume, vwap, from_datetime, to_datetime, info=None):
+        return AggregatedBar(open, high, low, close, volume, directional_volume, vwap, from_datetime, to_datetime, info)
 
     def _aggregate_null_bar(self, price, dt, info=None):
-        return self._aggregate_result(open=price, high=price, low=price, close=price, volume=0, directional_volume=0, vwap=price, sma=price, from_datetime=dt, to_datetime=dt, info=info)
+        return self._aggregate_result(open=price, high=price, low=price, close=price, volume=0, directional_volume=0, vwap=price, from_datetime=dt, to_datetime=dt, info=info)
 
     def _search_idx(self, target_datetime, *, side='right'):
         """Search for the index of target_datetime. If not found, return the index on the side (left or right) of the target_datetime
@@ -205,12 +203,9 @@ class BarAggregator:
         )
         vwap = vwap_numerator / max(volume, 1e-6)
 
-        # SMA: simple moving average
-        sma = sum(self.data.close[-i] for i in bars_to_agg) / max(len(bars_to_agg), 1e-6)
-
         from_datetime = self.data.datetime.datetime(-from_idx)
         to_datetime = self.data.datetime.datetime(-to_idx)
-        return self._aggregate_result(open, high, low, close, volume, directional_volume, vwap, sma, from_datetime, to_datetime, info)
+        return self._aggregate_result(open, high, low, close, volume, directional_volume, vwap, from_datetime, to_datetime, info)
 
     def aggregate_by_datetime(self, from_datetime, to_datetime=None, info=None):
         """Aggregate bars between two datetimes"""
@@ -303,28 +298,17 @@ class BarAggregator:
         anchor_day_open = self.data.open[-anchor_day_first_idx]
         prev_day_close = self.data.close[-(anchor_day_first_idx+1)]
         return anchor_day_open - prev_day_close
-    def all_previous_candles(self, n=3, color="red"):
-        """
-        Returns True if the last `n` completed bars are all the same color:
-          - color="red": each bar's close < open
-          - color="green": each bar's close > open
-        """
-        for i in range(1, n+1):              # 1..n (skip current forming bar)
-            o = self.data.open[-i]
-            c = self.data.close[-i]
-            if color == "red":
-                if c >= o:
-                    return False
-            elif color == "green":
-                if c <= o:
-                    return False
-            else:
-                raise ValueError("color must be 'red' or 'green'")
-        return True
+
     # --- Aliases --- 
     def get_current_bar(self):
         return self.aggregate_by_index(0)
-
+    
+    def get_m0(self):
+        return self.aggregate_by_index(from_idx=0, to_idx=0)
+    
+    def get_m1(self):
+        return self.aggregate_by_index(from_idx=1, to_idx=1)
+    
     def get_aggregated_bar(self, *, from_idx, to_idx):
         return self.aggregate_by_index(from_idx, to_idx)
     
