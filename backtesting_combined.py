@@ -12,19 +12,23 @@ from jupiter.strategies.strategy_daily_reversion_d1direction import DailyReversi
 from jupiter.strategies.strategy_daily_reversion_d1direction_alt2 import DailyReversionD1DirectionAlt2Strategy
 from jupiter.strategies.strategy_daily_reversion_d1direction_alt3 import DailyReversionD1DirectionAlt3Strategy
 from jupiter.strategies.strategy_daily_reversion_d2direction import DailyReversionD2DirectionStrategy
+from jupiter.strategies.strategy_daily_cont_d4 import DailyContD4Strategy
 from jupiter.strategies.strategy_afternoon_long_s1 import AfternoonLongS1Strategy
 from jupiter.strategies.strategy_afternoon_short_s1 import AfternoonShortS1Strategy
 from jupiter.strategies.strategy_afternoon_short_s1_alt2 import AfternoonShortS1Alt2Strategy
 
 
+
+
 # list of (strategy_class, size)
 STRATEGIES = {
-    OneTradePerDayStrategy: 1,
+    OneTradePerDayStrategy: 0,
 
     # daily strategies
     DailyReversionD1DirectionStrategy: 100,
     DailyReversionD1DirectionAlt2Strategy: 100,
     DailyReversionD1DirectionAlt3Strategy: 100,
+    DailyContD4Strategy: 100,
     DailyFollowD10VWAPStrategy: 75,
 
     # session (morning, afternoon) strategies
@@ -58,7 +62,7 @@ datafile = 'data/VN30F1M_m1_2020-02-10_to_2025-02-14.csv'
 #datafile = 'vn30f1m-m1.csv'
 fromdate = date(2024, 1, 1)
 todate = date(2024, 12, 31)
-#todate = date(2024, 2, 15)
+todate = date(2024, 1, 30)
 data_feed = BacktestData(historical=True, hist_datafile=datafile, fromdate=fromdate, todate=todate, timeframes=bt.TimeFrame.Minutes, compression=1)
 data_feed.p.simulate_ato = True
 
